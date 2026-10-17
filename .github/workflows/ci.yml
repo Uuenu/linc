@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  make:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            cc: gcc
+          - os: ubuntu-latest
+            cc: clang
+          - os: macos-latest
+            cc: clang
+    runs-on: ${{ matrix.os }}
+    env:
+      CC: ${{ matrix.cc }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test (warnings are errors)
+        run: make CFLAGS="-O3 -Werror" test
+      - name: Sanitizers (ASan + UBSan)
+        run: make sanitize
+      - name: Scalar fallback (no SIMD vector extensions)
+        run: make clean && make CFLAGS="-O2 -Werror -DLINC_NO_VECTOR_EXT" test
+      - name: Examples
+        run: |
+          make clean && make CFLAGS="-O3 -Werror" examples
+          build/solve_system && build/least_squares && build/pca
+      - name: Benchmark smoke test
+        run: make bench BENCH_ARGS="--quick"
+
+  cmake:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build --parallel
+      - run: ctest --test-dir build --output-on-failure
+      - run: cmake --install build --prefix "$RUNNER_TEMP/linc"
